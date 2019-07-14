@@ -29,6 +29,36 @@ func main(){
 
 }
 
+func clone_vm(src_vname string, dest_vname string){
+    mac := make_mac()
+    make_vmx(dest_vname,mac)
+    srcpath := "/vmfs/volumes/datastore1/" + src_vname
+    destpath := "/vmfs/volumes/datastore1/" + dest_vname
+    esxi_mkdir(destpath)
+    vmxpath := "./" + dest_vname + ".vmx"
+    send_to_esxi(vmxpath,destpath + "/" + dest_vname + ".vmx")
+    copy_disk(srcpath,destpath)
+}
+
+func send_to_esxi(local_path string, dest_path string){
+
+
+
+}
+
+func esxi_mkdir(thepath string){
+
+
+}
+
+func copy_disk(srcpath string, destpath string){
+    //vmkfstools -i "/vmfs/volumes/source_datastore/Some VM/Some VM.vmdk" -d thin "/vmfs/volumes/destination_datastore/Some VM/Some VM.vmdk"
+
+    cmd := "vmfstools -i \"" + srcpath + ".vmdk\" -d thin \"" + destpath + ".vmdk\""
+    esxi_command(cmd)
+
+}
+
 func make_pxefile(vname string,mac string){
     osimage := "http://svcrhcos.app.ctl.k.e2e.bos.redhat.com/rhcos-bios.raw.gz"
     ignition := "http://svcrhcos.app.ctl.k.e2e.bos.redhat.com/tiny/bootstrap.ign"
