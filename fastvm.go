@@ -1,12 +1,23 @@
 package main
 
 import (
-    "bufio"
-    "fmt"
-    "os"
-    "log"
-    "math/rand"
-    "time"
+        //"io"
+        "io/ioutil"
+        //"net"
+        //"github.com/tidwall/sjson"
+        //"github.com/tidwall/gjson"
+        . "github.com/glennswest/go-sshclient"
+        b64 "encoding/base64"
+        "strings"
+         "os"
+         //"encoding/json"
+         "fmt"
+         "log"
+         "errors"
+         "time"
+         "bufio"
+         "math/rand"
+         bolt "go.etcd.io/bbolt"
 )
 
 
@@ -50,6 +61,43 @@ func make_mac() string {
     return(mac)
 }
 
+func esxi_command(cmd string){
+
+    host := GetDbValue("esxihost")
+    log.Printf("esxi host: %s\n",host)
+    username := GetDbValue("sshuser")
+    sshkey_path := "~/.fastvm"
+    os.MkdirAll(sshkey_path,0700)
+    sshkey_path = sshkey_path + "/id"
+    sshkeyb64 := GetDbValue("sshkey")
+    sshkeybytes, _ := b64.StdEncoding.DecodeString(sshkeyb64)
+    ioutil.WriteFile(sshkey_path, sshkeybytes, 0600)
+    SshCommand(host,username,sshkey_path,cmd)
+}
+ 
+func SshCommand(host string,username string,keypath string,cmd string) string{
+
+    hp := host
+    if (strings.ContainsAny(hp,":") == false){
+       hp = host + ":22"
+       }
+    // Keypath should be pathname of private key
+    client, err := DialWithKey(hp, username, keypath)
+    if (err != nil){
+       log.Printf("SSHCommand: Cannot Connect to %s - %v\n",host,err)
+       return("")
+       }
+    defer client.Close()
+    log.Printf("%s\n",cmd)
+    out, err := client.Cmd(cmd).SmartOutput()
+    if (err != nil){
+          log.Printf("SSHCommand: Cannot send cmd: %v\n",err)
+          }
+    log.Printf("ssh: %s\n",string(out))
+    return(string(out))
+}
+
+
 func make_vmx(name string,mac string){
     f, _ := os.Create(name+".vmx")
     w := bufio.NewWriter(f)
@@ -74,3 +122,57 @@ func make_vmx(name string,mac string){
     fmt.Fprintln(w,"ethernet0.address = \"" + mac + "\"")
     w.Flush()
 }
+// Exists reports whether the named file or directory exists.
+func Exists(name string) bool {
+    if _, err := os.Stat(name); err != nil {
+        if os.IsNotExist(err) {
+            return false
+        }
+    }
+    return true
+}
+
+func GetBucketAndKey(k string) (string, string){
+     idx := strings.IndexByte(k,'.')
+     bucket := k[0:idx]
+     key := k[idx+1:]
+     return bucket,key
+}
+
+func GetDbValue(p string) string{
+     val := ""
+     //log.Printf("GetDbValue(%s)\n",p)
+     b,k := GetBucketAndKey(p)
+     db, _ := bolt.Open("/data/winoperator", 0600,nil)
+     db.View(func(tx *bolt.Tx) error {
+              bucket := tx.Bucket([]byte(b))
+              if bucket == nil {
+                   log.Printf("No Bucket\n")
+                   return errors.New("No Key ")
+                   }
+
+        val = string(bucket.Get([]byte(k)))
+        return nil
+    })
+     //log.Printf("External value = %s\n",val)
+     db.Close()
+     return val
+}
+func SetDbValue(k string,v string){
+     //log.Printf("SetDbValue(%s,%s)\n",k,v)
+     bucket,key := GetBucketAndKey(k)
+     db, _ := bolt.Open("/data/winoperator", 0600,nil)
+     db.Update(func(tx *bolt.Tx) error {
+           b, err := tx.CreateBucketIfNotExists([]byte(bucket))
+           if err != nil {
+              log.Printf("Err in create of bucket\n")
+              return err
+              }
+           //log.Printf("Setting %s to %s\n",key,v)
+           b.Put([]byte(key),[]byte(v))
+           return(nil)
+           })
+     db.Close()
+     return
+}
+
